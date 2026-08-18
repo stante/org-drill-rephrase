@@ -55,64 +55,73 @@ Must contain exactly one `%s' placeholder for the original question text."
 (defvar org-drill-rephrase--buffer nil
   "The org buffer in which the current drill session runs.")
 
-(defvar org-drill-rephrase--original-heading nil
-  "Original heading text of the card currently being displayed.")
-
 (defvar org-drill-rephrase--active nil
-  "Non-nil while a rephrased heading is showing in the buffer.")
+  "Non-nil while a rephrased question is showing in the buffer.")
 
-;;;; Heading helpers
+;;;; Question body helpers
 
-(defun org-drill-rephrase--get-heading ()
-  "Return the title of the org entry at point (no stars, no tags)."
+(defun org-drill-rephrase--question-bounds ()
+  "Return (BEG . END) of the question text in the current card.
+The question is the body text after the heading (and its property drawer)
+up to the first subheading (** or deeper), which marks the answer."
   (save-excursion
     (org-back-to-heading t)
-    (org-get-heading t t t t)))
+    (forward-line 1)
+    ;; Skip property drawer
+    (when (looking-at-p "[ \t]*:PROPERTIES:")
+      (re-search-forward "[ \t]*:END:[ \t]*\n" nil t))
+    (let ((beg (point))
+          (end (save-excursion
+                 ;; Find first subheading or end of subtree
+                 (if (re-search-forward "^\\*\\*+" nil t)
+                     (line-beginning-position)
+                   (org-end-of-subtree t)
+                   (point)))))
+      (cons beg end))))
 
-(defun org-drill-rephrase--set-heading (new-text)
-  "Replace the title of the org entry at point with NEW-TEXT."
-  (save-excursion
-    (org-back-to-heading t)
-    (let ((line-end (line-end-position)))
-      (re-search-forward "\\*+ +" line-end t)
-      (let* ((title-start (point))
-             (title-end (or (and (re-search-forward
-                                  "[ \t]+:[[:alnum:]_@#%:]+:[ \t]*$"
-                                  line-end t)
-                                 (match-beginning 0))
-                            line-end)))
-        (delete-region title-start title-end)
-        (goto-char title-start)
-        (insert new-text)))))
+(defun org-drill-rephrase--get-question ()
+  "Return the question text of the current card."
+  (let ((bounds (org-drill-rephrase--question-bounds)))
+    (string-trim (buffer-substring-no-properties (car bounds) (cdr bounds)))))
+
+(defun org-drill-rephrase--set-question (new-text)
+  "Replace the question body of the current card with NEW-TEXT."
+  (let ((bounds (org-drill-rephrase--question-bounds)))
+    (delete-region (car bounds) (cdr bounds))
+    (goto-char (car bounds))
+    (insert "\n" new-text "\n\n")))
 
 ;;;; Restore logic
 
+(defvar org-drill-rephrase--original-question nil
+  "Original question body text of the card currently being displayed.")
+
 (defun org-drill-rephrase--restore ()
-  "Silently restore the original heading text in the drill buffer."
+  "Silently restore the original question text in the drill buffer."
   (when (and org-drill-rephrase--active
-             org-drill-rephrase--original-heading
+             org-drill-rephrase--original-question
              (buffer-live-p org-drill-rephrase--buffer))
     (with-current-buffer org-drill-rephrase--buffer
-      (org-drill-rephrase--set-heading org-drill-rephrase--original-heading)))
+      (org-drill-rephrase--set-question org-drill-rephrase--original-question)))
   (setq org-drill-rephrase--active nil
-        org-drill-rephrase--original-heading nil))
+        org-drill-rephrase--original-question nil))
 
 (defun org-drill-rephrase--before-reschedule (&rest _)
-  "Restore original heading before org-drill rates and advances the card."
+  "Restore original question before org-drill rates and advances the card."
   (org-drill-rephrase--restore))
 
 ;;;; Rephrase-and-show logic
 
 (defun org-drill-rephrase--rephrase-current-card ()
-  "Rephrase the heading of the card at point and display the result.
+  "Rephrase the question body of the card at point and display the result.
 Shows a placeholder immediately, then updates asynchronously via gptel."
   (setq org-drill-rephrase--buffer (current-buffer))
-  (let* ((original (org-drill-rephrase--get-heading))
+  (let* ((original (org-drill-rephrase--get-question))
          (prompt   (format org-drill-rephrase-prompt original)))
-    (setq org-drill-rephrase--original-heading original
+    (setq org-drill-rephrase--original-question original
           org-drill-rephrase--active t)
     ;; Show placeholder while waiting for LLM
-    (org-drill-rephrase--set-heading "[…]")
+    (org-drill-rephrase--set-question "[…]")
     (gptel-request prompt
       :buffer (current-buffer)
       :callback
@@ -125,7 +134,7 @@ Shows a placeholder immediately, then updates asynchronously via gptel."
               (org-drill-rephrase--restore))
           (when (buffer-live-p org-drill-rephrase--buffer)
             (with-current-buffer org-drill-rephrase--buffer
-              (org-drill-rephrase--set-heading (string-trim response)))))))))
+              (org-drill-rephrase--set-question (string-trim response)))))))))
 
 ;;;; Hook into org-drill's card display
 
@@ -150,9 +159,9 @@ Restore any previous rephrase first, then call ORIG, then rephrase the new card.
 
 ;;;###autoload
 (defun org-drill-rephrase (&optional scope drill-sparingly)
-  "Start an org-drill session where every card's question is rephrased by an LLM.
+  "Start an org-drill session where every card's question body is rephrased by an LLM.
 
-The user never sees the original heading wording; only the LLM rephrasing is
+The user never sees the original question wording; only the LLM rephrasing is
 shown.  Original text is restored silently before each card is rated, so no
 changes are ever persisted.
 

@@ -123,7 +123,7 @@ Shows a placeholder immediately, then updates asynchronously via gptel."
     ;; Show placeholder while waiting for LLM
     (org-drill-rephrase--set-question "[…]")
     (gptel-request prompt
-      :buffer (current-buffer)
+      :buffer org-drill-rephrase--buffer
       :callback
       (lambda (response info)
         (if (not response)

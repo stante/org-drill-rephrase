@@ -59,10 +59,7 @@ Must contain exactly one `%s' placeholder for the original question text."
   "Non-nil while a rephrased question is showing in the buffer.")
 
 (defvar org-drill-rephrase--card-marker nil
-  "Marker pointing to the heading of the card currently being rephrased.
-Used by the async callback and restore logic to navigate back to the right
-position regardless of where point ends up after org-drill starts waiting
-for input.")
+  "Marker pointing to the heading of the card currently being rephrased.")
 
 ;;;; Question body helpers
 
@@ -86,28 +83,25 @@ up to the first subheading (** or deeper), which marks the answer."
       (cons beg end))))
 
 (defun org-drill-rephrase--get-question ()
-  "Return the question text of the current card.
-Returns a cons (TEXT . REGION) where TEXT is the trimmed question string
-and REGION is the (BEG . END) bounds, so callers can restore exactly."
+  "Return a cons (TEXT . BOUNDS) for the current card's question body.
+TEXT is the trimmed question string; BOUNDS is (BEG . END)."
   (let* ((bounds (org-drill-rephrase--question-bounds))
          (raw    (buffer-substring-no-properties (car bounds) (cdr bounds))))
     (cons (string-trim raw) bounds)))
 
 (defun org-drill-rephrase--set-question (new-text bounds)
   "Replace the question body region BOUNDS with NEW-TEXT.
-BOUNDS is a (BEG . END) cons as returned by `org-drill-rephrase--question-bounds'.
-The replacement preserves the leading and trailing whitespace of the original
-region so the buffer structure is not disturbed.
+Preserves the leading and trailing whitespace of the original region
+so the buffer structure is not disturbed.
 Point is preserved: the caller's position is not affected."
-  (let* ((pos     (point-marker))
-         (beg     (car bounds))
-         (end     (cdr bounds))
-         (raw     (buffer-substring-no-properties beg end))
-         ;; Measure leading/trailing whitespace of the original region.
-         (lead    (and (string-match "\\`\\([ \t\n]*\\)" raw)
-                       (match-string 1 raw)))
-         (trail   (and (string-match "\\([ \t\n]*\\)\\'" raw)
-                       (match-string 1 raw))))
+  (let* ((pos   (point-marker))
+         (beg   (car bounds))
+         (end   (cdr bounds))
+         (raw   (buffer-substring-no-properties beg end))
+         (lead  (and (string-match "\\`\\([ \t\n]*\\)" raw)
+                     (match-string 1 raw)))
+         (trail (and (string-match "\\([ \t\n]*\\)\\'" raw)
+                     (match-string 1 raw))))
     (delete-region beg end)
     (goto-char beg)
     (insert lead new-text trail)
@@ -117,12 +111,10 @@ Point is preserved: the caller's position is not affected."
 ;;;; Restore logic
 
 (defvar org-drill-rephrase--original-question nil
-  "Original question body text (trimmed string) of the card currently displayed.")
+  "Original question body text (trimmed) of the card currently displayed.")
 
 (defvar org-drill-rephrase--original-bounds nil
-  "Original (BEG . END) region of the question body, as buffer positions.
-Stored alongside `org-drill-rephrase--original-question' so restore can
-write back into exactly the same region without adding extra whitespace.")
+  "Original (BEG . END) bounds of the question body before rephrasing.")
 
 (defun org-drill-rephrase--restore ()
   "Silently restore the original question text in the drill buffer."
@@ -135,8 +127,7 @@ write back into exactly the same region without adding extra whitespace.")
     (with-current-buffer org-drill-rephrase--buffer
       (save-excursion
         (goto-char org-drill-rephrase--card-marker)
-        ;; Recompute bounds: after placeholder insertion the buffer positions
-        ;; have shifted, so we must re-derive them from the heading.
+        ;; Recompute bounds: buffer positions shift after rephrase insertion.
         (org-drill-rephrase--set-question
          org-drill-rephrase--original-question
          (org-drill-rephrase--question-bounds)))))
@@ -148,76 +139,63 @@ write back into exactly the same region without adding extra whitespace.")
   "Restore original question before org-drill rates and advances the card."
   (org-drill-rephrase--restore))
 
-;;;; Rephrase-and-show logic
+;;;; Rephrase logic
 
 (defun org-drill-rephrase--rephrase-current-card ()
-  "Rephrase the question body of the card at point and display the result.
-Shows a placeholder immediately, then updates asynchronously via gptel."
+  "Rephrase the question body of the card at point via the LLM.
+Blocks synchronously until the response arrives, then replaces the question
+body before org-drill sets up its display overlays."
   (setq org-drill-rephrase--buffer (current-buffer))
-  (let* ((q-data  (org-drill-rephrase--get-question))
+  (let* ((q-data   (org-drill-rephrase--get-question))
          (original (car q-data))
          (bounds   (cdr q-data))
-         (prompt   (format org-drill-rephrase-prompt original)))
-    ;; Save a marker to the heading so the async callback and restore logic
-    ;; can navigate back to the right card regardless of where point ends up.
+         (prompt   (format org-drill-rephrase-prompt original))
+         (done     nil)
+         (result   nil))
     (setq org-drill-rephrase--card-marker (save-excursion
                                             (org-back-to-heading t)
                                             (point-marker))
           org-drill-rephrase--original-question original
           org-drill-rephrase--original-bounds   bounds
           org-drill-rephrase--active t)
-    ;; Show placeholder while waiting for LLM
-    (org-drill-rephrase--set-question "[…]" bounds)
     (gptel-request prompt
       :buffer org-drill-rephrase--buffer
+      :stream nil
       :callback
-      (lambda (response info)
-        (if (not response)
-            (progn
-              (message "org-drill-rephrase: LLM request failed: %s"
-                       (plist-get info :status))
-              ;; Fall back to original so the user can still study
-              (org-drill-rephrase--restore))
-          (when (and (buffer-live-p org-drill-rephrase--buffer)
-                     org-drill-rephrase--active)
-            (with-current-buffer org-drill-rephrase--buffer
-              ;; Navigate to the card heading before calling set-question,
-              ;; since point may have moved while the async request was in flight.
-              (save-excursion
-                (goto-char org-drill-rephrase--card-marker)
-                (org-drill-rephrase--set-question
-                 (string-trim response)
-                 (org-drill-rephrase--question-bounds))))))))))
+      (lambda (response _info)
+        (setq result response
+              done t)))
+    ;; Block until the callback fires, yielding to process I/O.
+    (while (not done)
+      (accept-process-output nil 0.05))
+    (if (not (stringp result))
+        (message "org-drill-rephrase: LLM request failed, showing original")
+      (org-drill-rephrase--set-question (string-trim result) bounds))))
 
 ;;;; Hook into org-drill's card display
 
-;; org-drill 2.7 dispatches all card types through `org-drill-entry-f', which
-;; calls `org-narrow-to-subtree', `org-show-subtree', and then the card-type
-;; presentation function (e.g. `org-drill-present-simple-card').  That
-;; presentation function sets up hide/show overlays and then calls
-;; `org-drill-presentation-prompt'.
+;; org-drill 2.7 dispatches all card types through `org-drill-entry-f'.
+;; Inside it, `org-narrow-to-subtree' and `org-show-subtree' run first,
+;; then the card-type presentation function sets up hide/show overlays.
 ;;
-;; We must rephrase the question body BEFORE the presentation function runs,
-;; so that org-drill's overlays are placed on top of already-rephrased text.
-;; If we rephrase after the overlays are placed (e.g. in a :before advice on
-;; `org-drill-presentation-prompt'), the buffer-text change shifts the overlay
-;; positions and breaks the hide/show logic (answer becomes visible).
+;; We use an :around advice on `org-drill-entry-f' so we can rephrase
+;; BEFORE the presentation function places its overlays.  Rephrasing after
+;; overlay setup shifts the overlay positions, causing the answer subheading
+;; to become visible.
 ;;
-;; Solution: :before advice on `org-drill-entry-f', which runs after the
-;; subtree is narrowed/shown but before any presentation function or overlay.
-;;
-;; We also hook `org-drill-reschedule' (called when the user rates a card)
-;; to restore the original text before org-drill touches the entry again.
+;; The :around advice also lets us skip rephrasing for reschedule calls
+;; (org-drill-entry-f is called a second time with 'org-drill-reschedule
+;; as complete-func to show the answer and collect a rating).
 
-(defun org-drill-rephrase--before-entry-f (_session complete-func)
-  "Before advice for `org-drill-entry-f'.
-Restore any previous rephrase first, then rephrase the current card.
-Runs after the subtree is narrowed but before any overlays are placed,
-so the hide/show overlay positions are correct over the rephrased text.
-Only fires for card presentation calls, not for reschedule calls."
-  (when (not (eq complete-func 'org-drill-reschedule))
+(defun org-drill-rephrase--around-entry-f (orig session complete-func)
+  "Around advice for `org-drill-entry-f'.
+Rephrase the question before org-drill renders the card (presentation calls
+only).  Reschedule calls pass through unchanged."
+  (if (eq complete-func 'org-drill-reschedule)
+      (funcall orig session complete-func)
     (org-drill-rephrase--restore)
-    (org-drill-rephrase--rephrase-current-card)))
+    (org-drill-rephrase--rephrase-current-card)
+    (funcall orig session complete-func)))
 
 ;;;; Session entry point
 
@@ -233,16 +211,16 @@ SCOPE and DRILL-SPARINGLY are passed through to `org-drill' unchanged."
   (interactive)
   (unless (bound-and-true-p gptel-backend)
     (user-error "org-drill-rephrase: gptel is not configured.  \
-Set up a backend first with e.g. `gptel-make-openai'"))
-  (advice-add 'org-drill-entry-f :before
-              #'org-drill-rephrase--before-entry-f)
+Set up a backend first with e.g. `gptel-make-anthropic'"))
+  (advice-add 'org-drill-entry-f :around
+              #'org-drill-rephrase--around-entry-f)
   (advice-add 'org-drill-reschedule :before
               #'org-drill-rephrase--before-reschedule)
   (unwind-protect
       (org-drill scope drill-sparingly)
-    ;; Always clean up advice and restore heading when the session ends.
+    ;; Always clean up advices and restore text when the session ends.
     (advice-remove 'org-drill-entry-f
-                   #'org-drill-rephrase--before-entry-f)
+                   #'org-drill-rephrase--around-entry-f)
     (advice-remove 'org-drill-reschedule
                    #'org-drill-rephrase--before-reschedule)
     (org-drill-rephrase--restore)))

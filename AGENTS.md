@@ -2,7 +2,7 @@
 
 ## Repo at a glance
 
-Single-file Emacs Lisp package (`org-drill-rephrase.el`, ~187 lines). No build system, no test suite, no CI, no package manager.
+Single-file Emacs Lisp package (`org-drill-rephrase.el`, ~233 lines). No build system, no test suite, no CI, no package manager.
 
 Runtime dependencies (declared in file header):
 - **gptel** ≥ 0.9 — LLM client
@@ -24,10 +24,10 @@ All logic is in `org-drill-rephrase.el`. Key facts:
 
 - **Entry point:** `M-x org-drill-rephrase` (autoloaded interactive function) — wraps `org-drill` with advices installed for the session.
 - **Hook mechanism:** Emacs advice, not hooks:
-  - `:before` on `org-drill-presentation-prompt` — triggers LLM rephrasing on card display. **Note:** `org-drill-present-card` does not exist in org-drill 2.7; `org-drill-presentation-prompt` is the common call site across all card types.
+  - `:around` on `org-drill-entry-f` — rephrases the question body synchronously before org-drill calls the presentation function. `org-drill-entry-f` is the single dispatch point for all card types in org-drill 2.7.
   - `:before` on `org-drill-reschedule` — restores original text before rating/save.
-- **What gets rephrased:** The question body (text between the heading and the first `**` subheading), not the heading title or answer.
-- **Async flow:** `gptel-request` replaces body with `[…]` while waiting; callback swaps in the LLM response or restores original on failure.
+- **What gets rephrased:** The question body (text between the heading/planning/drawer block and the first `**` subheading), not the heading title or answer.
+- **Sync flow:** `gptel-request` is called with a callback; a `sit-for 0.05` loop (wrapped in `inhibit-quit`) blocks until the callback sets `done`, yielding to `url-retrieve`'s event-driven HTTP sentinel. No placeholder text is inserted.
 - **Non-destructive:** Original text is always restored before any disk write. `unwind-protect` removes advices on exit even on error or quit.
 - **`lexical-binding: t`** is required — closures in the `gptel-request` callback depend on it.
 
@@ -37,7 +37,9 @@ All logic is in `org-drill-rephrase.el`. Key facts:
 |---|---|
 | `org-drill-rephrase--buffer` | Reference to the active org buffer, passed explicitly to `gptel-request` for async safety |
 | `org-drill-rephrase--active` | Guard flag; non-nil while a rephrase is showing |
-| `org-drill-rephrase--original-question` | Saved original question text |
+| `org-drill-rephrase--card-marker` | Marker pointing to the heading of the card currently being rephrased |
+| `org-drill-rephrase--original-question` | Saved original question text (trimmed) |
+| `org-drill-rephrase--original-bounds` | Original (BEG . END) bounds of the question body before rephrasing |
 | `org-drill-rephrase-prompt` | User-customizable prompt template (single `%s` placeholder) |
 
 ## Conventions

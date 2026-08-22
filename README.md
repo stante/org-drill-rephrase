@@ -7,9 +7,9 @@ The user **never sees the original wording**, which prevents pattern-matching on
 ## How it works
 
 1. `M-x org-drill-rephrase` starts a normal org-drill session
-2. Before each card is shown, the heading is replaced with `[…]` while the LLM request is in flight
-3. The LLM response replaces the placeholder — the user sees only the rephrased question
-4. When the user rates the card, the original heading is restored silently in the background
+2. Before each card is shown, the question body is sent to the LLM synchronously (no placeholder is inserted)
+3. The LLM response replaces the question body — the user sees only the rephrased question
+4. When the user rates the card, the original text is restored silently before org-drill saves
 5. No changes are ever saved
 
 ## Requirements

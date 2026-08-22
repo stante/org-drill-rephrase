@@ -2,12 +2,12 @@
 
 ;; Copyright (C) 2026
 
-;; Author: Your Name
+;; Author: Alexander Stante
 ;; Assisted-by: Claude:claude-sonnet-4-6
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1") (gptel "0.9") (org-drill "2.7"))
 ;; Keywords: org, drill, flashcards, llm, ai
-;; URL: https://github.com/yourusername/org-drill-rephrase
+;; URL: https://github.com/stante/org-drill-rephrase
 
 ;;; Commentary:
 

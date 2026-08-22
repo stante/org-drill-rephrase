@@ -70,6 +70,9 @@ up to the first subheading (** or deeper), which marks the answer."
   (save-excursion
     (org-back-to-heading t)
     (forward-line 1)
+    ;; Skip SCHEDULED/DEADLINE/CLOSED planning lines
+    (while (looking-at-p "[ \t]*\\(SCHEDULED\\|DEADLINE\\|CLOSED\\):")
+      (forward-line 1))
     ;; Skip property drawer
     (when (looking-at-p "[ \t]*:PROPERTIES:")
       (re-search-forward "[ \t]*:END:[ \t]*\n" nil t))
@@ -165,9 +168,13 @@ body before org-drill sets up its display overlays."
       (lambda (response _info)
         (setq result response
               done t)))
-    ;; Block until the callback fires, yielding to process I/O.
-    (while (not done)
-      (accept-process-output nil 0.05))
+    ;; `url-retrieve' is event-driven; we must yield to the Emacs event loop
+    ;; so the HTTP response sentinel can fire and invoke the callback.
+    ;; `sit-for' with NODISP=nil processes all pending events including
+    ;; network I/O.  We loop until done, ignoring user input (C-g aside).
+    (let ((inhibit-quit t))
+      (while (not done)
+        (sit-for 0.05)))
     (if (not (stringp result))
         (message "org-drill-rephrase: LLM request failed, showing original")
       (org-drill-rephrase--set-question (string-trim result) bounds))))
@@ -189,13 +196,9 @@ body before org-drill sets up its display overlays."
 
 (defun org-drill-rephrase--around-entry-f (orig session complete-func)
   "Around advice for `org-drill-entry-f'.
-Rephrase the question before org-drill renders the card (presentation calls
-only).  Reschedule calls pass through unchanged."
-  (if (eq complete-func 'org-drill-reschedule)
-      (funcall orig session complete-func)
-    (org-drill-rephrase--restore)
-    (org-drill-rephrase--rephrase-current-card)
-    (funcall orig session complete-func)))
+Rephrase the question before org-drill renders the card."
+  (org-drill-rephrase--rephrase-current-card)
+  (funcall orig session complete-func))
 
 ;;;; Session entry point
 

@@ -62,6 +62,9 @@ Must contain exactly one `%s' placeholder for the original question text."
 (defvar org-drill-rephrase--card-marker nil
   "Marker pointing to the heading of the card currently being rephrased.")
 
+(defvar org-drill-rephrase--buffer-modified nil
+  "The buffer-modified state before rephrasing, restored after.")
+
 ;;;; Question body helpers
 
 (defun org-drill-rephrase--question-bounds ()
@@ -134,10 +137,12 @@ Point is preserved: the caller's position is not affected."
         ;; Recompute bounds: buffer positions shift after rephrase insertion.
         (org-drill-rephrase--set-question
          org-drill-rephrase--original-question
-         (org-drill-rephrase--question-bounds)))))
+         (org-drill-rephrase--question-bounds)))
+      (set-buffer-modified-p org-drill-rephrase--buffer-modified)))
   (setq org-drill-rephrase--active nil
         org-drill-rephrase--original-question nil
-        org-drill-rephrase--original-bounds nil))
+        org-drill-rephrase--original-bounds nil
+        org-drill-rephrase--buffer-modified nil))
 
 (defun org-drill-rephrase--before-reschedule (&rest _)
   "Restore original question before org-drill rates and advances the card."
@@ -161,6 +166,7 @@ body before org-drill sets up its display overlays."
                                             (point-marker))
           org-drill-rephrase--original-question original
           org-drill-rephrase--original-bounds   bounds
+          org-drill-rephrase--buffer-modified   (buffer-modified-p)
           org-drill-rephrase--active t)
     (gptel-request prompt
       :buffer org-drill-rephrase--buffer

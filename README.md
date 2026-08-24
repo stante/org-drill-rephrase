@@ -1,5 +1,7 @@
 # org-drill-rephrase
 
+[![Tests](https://github.com/stante/org-drill-rephrase/actions/workflows/test.yml/badge.svg)](https://github.com/stante/org-drill-rephrase/actions/workflows/test.yml)
+
 Drop-in replacement for `org-drill` that rephrases every flashcard question via an LLM before showing it to the user.
 
 The user **never sees the original wording**, which prevents pattern-matching on familiar phrasing and forces genuine recall.  The rephrasing is never written to disk — original text is silently restored before each card is rated.

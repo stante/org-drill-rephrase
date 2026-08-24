@@ -41,7 +41,8 @@ Point is placed at the first heading."
 (ert-deftest org-drill-rephrase--question-bounds/simple ()
   "Basic card: heading, question, answer subheading."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 What is 2+2?
 ** Answer
 4
@@ -53,7 +54,8 @@ What is 2+2?
 (ert-deftest org-drill-rephrase--question-bounds/with-properties ()
   "Card with a PROPERTIES drawer — drawer must be skipped."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 :PROPERTIES:
 :DRILL_CARD_TYPE: simple
 :END:
@@ -68,7 +70,8 @@ What is 3+3?
 (ert-deftest org-drill-rephrase--question-bounds/with-scheduled ()
   "Card with a SCHEDULED planning line — it must be skipped."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 SCHEDULED: <2026-01-01>
 What is 4+4?
 ** Answer
@@ -81,7 +84,8 @@ What is 4+4?
 (ert-deftest org-drill-rephrase--question-bounds/no-subheading ()
   "Card without a subheading — bounds must reach end of subtree."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 What is 5+5?
 "
     (let* ((bounds (org-drill-rephrase--question-bounds))
@@ -91,7 +95,8 @@ What is 5+5?
 (ert-deftest org-drill-rephrase--question-bounds/multiline-question ()
   "Multi-line question body is captured in full."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Line one.
 Line two.
 Line three.
@@ -108,7 +113,8 @@ yes
 (ert-deftest org-drill-rephrase--question-bounds/does-not-include-answer ()
   "Answer subheading text must not appear in the question bounds."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 The question.
 ** Answer
 The answer.
@@ -122,7 +128,8 @@ The answer.
 (ert-deftest org-drill-rephrase--get-question/returns-cons ()
   "Return value is a cons of (string . (beg . end))."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Question text.
 ** Answer
 Answer.
@@ -135,7 +142,8 @@ Answer.
 (ert-deftest org-drill-rephrase--get-question/text-is-trimmed ()
   "Returned text must be trimmed of surrounding whitespace."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 
   Question text.  
 
@@ -148,7 +156,8 @@ Answer.
 (ert-deftest org-drill-rephrase--get-question/bounds-are-integers ()
   "Bounds must be integer buffer positions."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Question.
 ** Answer
 Answer.
@@ -164,7 +173,8 @@ Answer.
 (ert-deftest org-drill-rephrase--set-question/replaces-text ()
   "Replacement text appears in buffer after set-question."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Original question.
 ** Answer
 Answer.
@@ -181,7 +191,8 @@ Answer.
 (ert-deftest org-drill-rephrase--set-question/preserves-whitespace-structure ()
   "Leading/trailing whitespace of the original region is preserved."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Original question.
 ** Answer
 Answer.
@@ -202,7 +213,8 @@ Answer.
 (ert-deftest org-drill-rephrase--set-question/preserves-point ()
   "Point must be unchanged after set-question."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Original question.
 ** Answer
 Answer.
@@ -216,7 +228,8 @@ Answer.
 (ert-deftest org-drill-rephrase--set-question/roundtrip ()
   "Setting question to original text leaves buffer content unchanged."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Original question.
 ** Answer
 Answer.
@@ -235,7 +248,8 @@ Answer.
 (ert-deftest org-drill-rephrase--restore/no-op-when-inactive ()
   "restore must be a no-op when --active is nil."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Original.
 ** Answer
 Answer.
@@ -246,7 +260,8 @@ Answer.
 (ert-deftest org-drill-rephrase--restore/restores-original-text ()
   "restore puts back the saved original question."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Original question.
 ** Answer
 Answer.
@@ -272,7 +287,8 @@ Answer.
 (ert-deftest org-drill-rephrase--restore/clears-state-vars ()
   "restore sets all internal state vars back to nil."
   (with-org-drill-buffer
-      "* Card
+      "
+* Card
 Original.
 ** Answer
 Answer.

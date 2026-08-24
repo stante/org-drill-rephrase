@@ -1,0 +1,29 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Emacs
+        run: sudo apt-get install -y emacs-nox
+
+      - name: Run ERT tests
+        run: |
+          emacs -Q --batch \
+            --eval "(provide 'gptel)" \
+            --eval "(provide 'org-drill)" \
+            --eval "(defvar gptel-backend nil)" \
+            --eval "(defun gptel-request (&rest _) nil)" \
+            --eval "(defun org-drill (&rest _) nil)" \
+            --eval "(require 'ert)" \
+            --eval "(add-to-list 'load-path \".\")" \
+            -l org-drill-rephrase.el \
+            -l org-drill-rephrase-tests.el \
+            -f ert-run-tests-batch-and-exit
